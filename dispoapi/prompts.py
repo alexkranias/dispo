@@ -55,7 +55,7 @@ MODE_PROVIDERS: dict[str, str] = {
     "1984": "gemini",
     "1999": "gemini",
     "tree": "gemini",
-    "sam": "sam",
+    "sam": "gemini",
 }
 
 # -- Combined lookups -------------------------------------------------------
