@@ -249,6 +249,118 @@ async def call_modal(image_bytes: bytes, prompt: str) -> bytes:
     return decode_image_b64(data["image_b64"])
 
 
+async def call_business_card(image_bytes: bytes, prompt: str) -> bytes:
+    """
+    Two-step business card generation:
+    1. Analyze the source image with Gemini vision to extract text / QR codes
+    2. Generate a 3.5:2 landscape business card image with extracted info
+    """
+    client = _get_gemini_client()
+    input_image = Image.open(io.BytesIO(image_bytes))
+
+    # -- Step 1: OCR / analyse the image ------------------------------------
+    analysis_prompt = (
+        "Analyze this image carefully.\n"
+        "1. Extract ALL visible text (names, titles, phone numbers, emails, "
+        "addresses, company names, websites, social handles).\n"
+        "2. If there is a QR code, decode its content.\n"
+        "3. Briefly describe the main person or subject.\n\n"
+        "Return your findings in this exact format:\n"
+        "TEXT: <all extracted text, comma-separated>\n"
+        "QR: <decoded QR content, or NONE>\n"
+        "SUBJECT: <brief description of the main person/subject>"
+    )
+
+    analysis_response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=[analysis_prompt, input_image],
+    )
+
+    analysis = analysis_response.text.strip() if analysis_response.text else ""
+    log.info("business_card analysis: %s", analysis[:300])
+
+    # Determine whether we found meaningful contact info
+    has_text = "TEXT:" in analysis and "NONE" not in analysis.split("TEXT:", 1)[1].split("\n")[0].upper()
+    has_qr = "QR:" in analysis and "NONE" not in analysis.split("QR:", 1)[1].split("\n")[0].upper()
+    has_info = has_text or has_qr
+
+    # -- Step 2: Generate the business card image ---------------------------
+    card_rules = (
+        "Create a FLAT 2D horizontal business card graphic. "
+        "This is NOT a photograph. Do NOT render a card on a table or desk. "
+        "Do NOT add perspective, shadows, or any 3D effect. "
+        "The ENTIRE image must be the card — nothing else. "
+        "Think of it like a design exported from Canva or Figma: a simple "
+        "rectangular graphic, wider than it is tall, with a white background. "
+        "Place a circular headshot of the main subject from the reference photo "
+        "on the LEFT side. Use modern sans-serif typography. "
+        "Minimal, clean, professional design.\n\n"
+    )
+
+    if has_info:
+        gen_prompt = (
+            f"{card_rules}"
+            "On the RIGHT side, lay out the following extracted contact "
+            "information in a clean typographic hierarchy:\n\n"
+            f"{analysis}\n"
+        )
+    else:
+        gen_prompt = (
+            f"{card_rules}"
+            "On the RIGHT side, add subtle light-grey placeholder lines "
+            "where a name, title, email, and phone number would go. "
+            "Leave it ready for the owner to fill in later.\n"
+        )
+
+    response = client.models.generate_content(
+        model="gemini-2.5-flash-image",
+        contents=[gen_prompt, input_image],
+    )
+
+    if not response.parts:
+        raise HTTPException(
+            status_code=502, detail="Gemini returned no response for business card."
+        )
+
+    # Extract image bytes, then force 3.5:2 landscape aspect ratio
+    raw_bytes: bytes | None = None
+    for part in response.parts:
+        if part.inline_data is not None:
+            raw_bytes = part.inline_data.data
+            break
+
+    if raw_bytes is None:
+        raise HTTPException(
+            status_code=502,
+            detail="Gemini did not return an image for the business card.",
+        )
+
+    # Post-process: crop/resize to exact 3.5:2 (1.75:1) landscape
+    card = Image.open(io.BytesIO(raw_bytes))
+
+    # If portrait, rotate to landscape
+    if card.height > card.width:
+        card = card.rotate(90, expand=True)
+
+    target_ratio = 3.5 / 2.0  # 1.75
+    current_ratio = card.width / card.height
+
+    if current_ratio > target_ratio:
+        # Too wide — crop sides
+        new_width = int(card.height * target_ratio)
+        left = (card.width - new_width) // 2
+        card = card.crop((left, 0, left + new_width, card.height))
+    elif current_ratio < target_ratio:
+        # Too tall — crop top/bottom
+        new_height = int(card.width / target_ratio)
+        top = (card.height - new_height) // 2
+        card = card.crop((0, top, card.width, top + new_height))
+
+    buf = io.BytesIO()
+    card.save(buf, format="PNG")
+    return buf.getvalue()
+
+
 async def call_perplexity(image_bytes: bytes, prompt: str) -> str:
     """
     Send image to Perplexity Sonar API for analysis (e.g. pricing mode).
@@ -313,6 +425,7 @@ PROVIDER_CALL = {
     "openai_image_edit": call_openai_image_edit,
     "gemini": call_gemini,
     "modal": call_modal,
+    "business_card": call_business_card,
 }
 
 
