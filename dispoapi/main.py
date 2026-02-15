@@ -8,6 +8,7 @@ import base64
 import io
 import logging
 import os
+import re
 
 import httpx
 from dotenv import load_dotenv
@@ -374,6 +375,9 @@ async def apply_filter(
         if mode in SEARCH_MODES:
             text = await call_perplexity(image_bytes, prompt)
             result_b64 = encode_image_b64(image_bytes)  # echo original image back
+
+            # Strip Perplexity citation references like [1], [3], etc.
+            text = re.sub(r"\[\d+\]", "", text).strip()
 
             # Parse "ITEM NAME — $PRICE" into structured title/price fields
             if "—" in text:
