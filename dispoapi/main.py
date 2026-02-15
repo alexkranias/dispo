@@ -18,7 +18,7 @@ from google.genai import types as genai_types
 from openai import OpenAI
 from PIL import Image
 
-from prompts import MODE_PROMPTS, SEARCH_MODES, VALID_MODES
+from prompts import FILTER_MODES, MODE_PROMPTS, MODE_PROVIDERS, SEARCH_MODES, VALID_MODES
 
 load_dotenv()
 
@@ -119,6 +119,41 @@ async def call_openai(image_bytes: bytes, prompt: str) -> bytes:
 
     raise HTTPException(
         status_code=502, detail="OpenAI did not return an image in its response."
+    )
+
+
+async def call_openai_image_edit(image_bytes: bytes, prompt: str) -> bytes:
+    """
+    Send image + prompt to OpenAI via the Images Edit API (gpt-image-1.5).
+    Returns transformed image bytes.
+    """
+    client = _get_openai_client()
+
+    response = client.images.edits(
+        image=io.BytesIO(image_bytes),
+        prompt=prompt,
+        model="gpt-image-1.5",
+        n=1,
+        size="1024x1024",
+        quality="auto",
+        background="auto",
+        moderation="auto",
+        input_fidelity="high",
+    )
+
+    # The response contains a list of image objects with b64_json or url
+    if response.data and len(response.data) > 0:
+        img_data = response.data[0]
+        if img_data.b64_json:
+            return base64.b64decode(img_data.b64_json)
+        elif img_data.url:
+            # Download from URL if b64 not available
+            async with httpx.AsyncClient(timeout=60.0) as http:
+                resp = await http.get(img_data.url)
+                return resp.content
+
+    raise HTTPException(
+        status_code=502, detail="OpenAI image edit did not return an image."
     )
 
 
@@ -235,10 +270,9 @@ async def call_perplexity(image_bytes: bytes, prompt: str) -> str:
 # Provider routing
 # ---------------------------------------------------------------------------
 
-VALID_PROVIDERS = {"openai", "gemini", "modal", "perplexity"}
-
 PROVIDER_CALL = {
     "openai": call_openai,
+    "openai_image_edit": call_openai_image_edit,
     "gemini": call_gemini,
     "modal": call_modal,
 }
@@ -268,23 +302,13 @@ async def get_modes():
 @app.post("/filter")
 async def apply_filter(
     mode: str = Form(..., description="Filter mode to apply"),
-    provider: str = Form(
-        "openai", description="AI provider: openai, gemini, modal, perplexity"
-    ),
     image: UploadFile = File(..., description="Source image to transform"),
 ):
     """
     Apply an AI image filter/transformation based on the given mode.
 
-    The caller chooses the provider (openai, gemini, modal, perplexity).
-    Defaults to openai.
+    The provider is determined automatically per mode (see MODE_PROVIDERS).
     """
-    if provider not in VALID_PROVIDERS:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unknown provider '{provider}'. Valid: {sorted(VALID_PROVIDERS)}",
-        )
-
     prompt = get_prompt_for_mode(mode)
     image_bytes = await image.read()
 
@@ -297,6 +321,12 @@ async def apply_filter(
         )
 
     text = ""
+
+    # Determine provider: search modes -> perplexity, filter modes -> MODE_PROVIDERS
+    if mode in SEARCH_MODES:
+        provider = "perplexity"
+    else:
+        provider = MODE_PROVIDERS.get(mode, "gemini")
 
     try:
         if mode in SEARCH_MODES:

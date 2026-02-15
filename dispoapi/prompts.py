@@ -36,6 +36,24 @@ SEARCH_PROMPTS: dict[str, str] = {
     ),
 }
 
+# -- Provider routing per mode -----------------------------------------------
+# Every filter mode is "gemini" except "ghibli" which uses OpenAI gpt-image-1.5.
+# Search modes are routed to "perplexity" in the endpoint logic.
+
+MODE_PROVIDERS: dict[str, str] = {
+    "greek": "gemini",
+    "ghibli": "openai_image_edit",
+    "duck": "gemini",
+    "GPUMODE": "gemini",
+    "thinker": "gemini",
+    "business_card": "gemini",
+    "1846": "gemini",
+    "1929": "gemini",
+    "1955": "gemini",
+    "1984": "gemini",
+    "1999": "gemini",
+}
+
 # -- Combined lookups -------------------------------------------------------
 
 MODE_PROMPTS: dict[str, str] = {**FILTER_PROMPTS, **SEARCH_PROMPTS}

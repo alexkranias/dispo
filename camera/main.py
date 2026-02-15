@@ -5,11 +5,15 @@ import requests
 import datetime
 import io
 import os
+import base64
 from gpiozero import Button, RotaryEncoder
 from escpos.printer import Serial
 from PIL import Image, ImageEnhance, ImageOps, ImageDraw, ImageFont
 
 # ========== CONFIGURATION ==========
+
+# API Settings
+API_BASE_URL = "https://web-production-95a4f.up.railway.app"
 
 # Hardware Pins
 PIN_SHUTTER = 22  # The Encoder Switch (SW)
@@ -24,9 +28,6 @@ PRINTER_WIDTH = 384
 # Camera Settings
 CAM_WIDTH = 1024
 CAM_HEIGHT = 768
-
-# Modes
-MODES = ["DIRECT_PRINT", "API_FILTER_1", "API_FILTER_2"]
 
 # Image Processing - Test 2 Settings
 CONTRAST = 1.6
@@ -46,6 +47,18 @@ class ThermalCam:
     def __init__(self):
         self.current_mode_index = 0
         
+        # Fetch modes from API
+        try:
+            print("Fetching modes from API...")
+            resp = requests.get(f"{API_BASE_URL}/modes", timeout=5)
+            resp.raise_for_status()
+            data = resp.json()
+            self.modes = data["modes"]
+            print(f"Modes loaded: {self.modes}")
+        except Exception as e:
+            print(f"API unavailable ({e}), falling back to Standard mode")
+            self.modes = ["Standard"]
+        
         # Setup Printer
         try:
             self.printer = Serial(devfile=SERIAL_PORT, baudrate=BAUD_RATE)
@@ -55,19 +68,18 @@ class ThermalCam:
         # Setup GPIO
         # bounce_time=0.1 prevents "spamming" (debouncing)
         self.shutter = Button(PIN_SHUTTER, pull_up=True, bounce_time=0.1)
-        self.encoder = RotaryEncoder(PIN_ENC_CLK, PIN_ENC_DT, max_steps=len(MODES)-1, wrap=True)
+        self.encoder = RotaryEncoder(PIN_ENC_CLK, PIN_ENC_DT)
         
         # Connect Events
         self.shutter.when_released = self.handle_shutter
         self.encoder.when_rotated = self.handle_dial
         
-        print(f"System Ready. Mode: {MODES[self.current_mode_index]}")
+        print(f"System Ready. Mode: {self.modes[self.current_mode_index]}")
 
     def handle_dial(self):
         """Handle Rotary Encoder Movement"""
-        step = self.encoder.steps
-        self.current_mode_index = step % len(MODES)
-        print(f"Mode Switched to: {MODES[self.current_mode_index]}")
+        self.current_mode_index = self.encoder.steps % len(self.modes)
+        print(f"Mode Switched to: {self.modes[self.current_mode_index]}")
 
     def get_info_string(self):
         """Get formatted date and location"""
@@ -217,9 +229,31 @@ class ThermalCam:
         return img
 
     def call_api(self, pil_image, mode):
-        # Placeholder for API
+        """Call the DispoAPI /filter endpoint with the image and mode"""
         print(f"Calling API for mode: {mode}...")
-        return pil_image, f"Mode: {mode}"
+        
+        # Save image to buffer
+        buf = io.BytesIO()
+        pil_image.save(buf, format="JPEG")
+        buf.seek(0)
+
+        # POST to /filter endpoint (provider is determined server-side per mode)
+        resp = requests.post(
+            f"{API_BASE_URL}/filter",
+            data={"mode": mode},
+            files={"image": ("capture.jpg", buf, "image/jpeg")},
+            timeout=120,
+        )
+        resp.raise_for_status()
+        result = resp.json()
+
+        # Decode the returned image
+        img_bytes = base64.b64decode(result["image_b64"])
+        api_img = Image.open(io.BytesIO(img_bytes))
+
+        # For search modes, text is returned instead of a transformed image
+        text = result.get("text", "")
+        return api_img, text
 
     def print_image(self, img):
         print("Printing...")
@@ -234,7 +268,7 @@ class ThermalCam:
         self.printer.text("\n\n\n")
 
     def handle_shutter(self):
-        current_mode = MODES[self.current_mode_index]
+        current_mode = self.modes[self.current_mode_index]
         print(f"Shutter Pressed! Mode: {current_mode}")
         
         try:
@@ -246,12 +280,13 @@ class ThermalCam:
             
             caption_text = self.get_info_string()
             final_img = raw_img
+            api_text = ""
 
-            if current_mode != "DIRECT_PRINT":
+            # Skip API call for Standard mode
+            if current_mode != "Standard":
                 try:
-                    api_img, api_caption = self.call_api(raw_img, current_mode)
+                    api_img, api_text = self.call_api(raw_img, current_mode)
                     final_img = api_img
-                    # Update caption based on API if needed
                 except Exception as e:
                     print(f"API Failed: {e}")
 
@@ -260,7 +295,9 @@ class ThermalCam:
             new_height = int(PRINTER_WIDTH * aspect_ratio)
             final_img = final_img.resize((PRINTER_WIDTH, new_height), Image.Resampling.LANCZOS)
 
-            # Add Caption (now overlaid on image, no white band)
+            # Add Caption (use API text if available, otherwise use date/location)
+            if api_text:
+                caption_text = api_text
             final_img_with_text = self.add_caption(final_img, caption_text)
 
             # Dither and Print (using Test 2 settings)
