@@ -20,6 +20,7 @@ FILTER_PROMPTS: dict[str, str] = {
     "1955": "Reimagine the image as if it were the year 1955. Keep the camera angle the exact same. Keep the main subjects posed the exact same.",
     "1984": "Reimagine the image as if it were the year 1984. Keep the camera angle the exact same. Keep the main subjects posed the exact same.",
     "1999": "Reimagine the image as if it were the year 1999. Keep the camera angle the exact same. Keep the main subjects posed the exact same.",
+    "tree": "Make every human become a full body cute redwood tree mascot in the same position (you can't see their face). They should be perfectly tree shaped with a triangular green top and a brown trunk. Keep the rest of the scene completely unchanged.",
 }
 
 # -- Search modes (Perplexity — image in, text out) -------------------------
@@ -52,6 +53,7 @@ MODE_PROVIDERS: dict[str, str] = {
     "1955": "gemini",
     "1984": "gemini",
     "1999": "gemini",
+    "tree": "gemini",
 }
 
 # -- Combined lookups -------------------------------------------------------
