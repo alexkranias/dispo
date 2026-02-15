@@ -17,6 +17,7 @@ from fastapi.responses import JSONResponse
 from google import genai
 from google.genai import types as genai_types
 from openai import OpenAI
+from pydantic import BaseModel
 from PIL import Image, ImageDraw, ImageFont
 
 from prompts import FILTER_MODES, MODE_PROMPTS, MODE_PROVIDERS, SEARCH_MODES, VALID_MODES
@@ -293,73 +294,99 @@ async def call_modal(image_bytes: bytes, prompt: str) -> bytes:
     return decode_image_b64(data["image_b64"])
 
 
+# ---------------------------------------------------------------------------
+# Business card structured OCR model
+# ---------------------------------------------------------------------------
+
+
+class BusinessCardInfo(BaseModel):
+    """Structured contact info extracted from an image via OCR."""
+    name: str = ""
+    title: str = ""
+    company: str = ""
+    contact: str = ""  # email, website, phone, social handle — whatever is found
+
+
+def _make_blank_card(width: int = 1050, height: int = 600) -> Image.Image:
+    """Create a plain white image at 3.5:2 aspect ratio (standard business card)."""
+    return Image.new("RGB", (width, height), "white")
+
+
+async def _ocr_business_card(client: genai.Client, image: Image.Image) -> BusinessCardInfo:
+    """Use Gemini to extract structured contact info from an image."""
+    ocr_prompt = (
+        "Look at this image. Extract any information useful for a business card. "
+        "Return JSON with these fields (empty string if not found): "
+        "name, title, company, contact (email/website/phone/social)."
+    )
+
+    response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=[ocr_prompt, image],
+        config=genai_types.GenerateContentConfig(
+            response_mime_type="application/json",
+            response_schema=BusinessCardInfo,
+        ),
+    )
+
+    text = response.text.strip() if response.text else "{}"
+    log.info("business_card OCR: %s", text[:300])
+
+    try:
+        return BusinessCardInfo.model_validate_json(text)
+    except Exception:
+        return BusinessCardInfo()
+
+
 async def call_business_card(image_bytes: bytes, prompt: str) -> bytes:
     """
-    Two-step business card generation:
-    1. Analyze the source image with Gemini vision to extract text / QR codes
-    2. Generate a 3.5:2 landscape business card image with extracted info
+    Business card generation:
+    1. Structured OCR to extract name/title/company/contact from the photo
+    2. Send blank white 3.5:2 card canvas + photo to Gemini Flash with the
+       extracted info to compose the card.
     """
     client = _get_gemini_client()
     input_image = Image.open(io.BytesIO(image_bytes))
 
-    # -- Step 1: OCR / analyse the image ------------------------------------
-    analysis_prompt = (
-        "Analyze this image carefully.\n"
-        "1. Extract ALL visible text (names, titles, phone numbers, emails, "
-        "addresses, company names, websites, social handles).\n"
-        "2. If there is a QR code, decode its content.\n"
-        "3. Briefly describe the main person or subject.\n\n"
-        "4. if text is not useful for business card don't include it!\n\n"
-        "Return your findings in this exact format:\n"
-        "TEXT: <all extracted text, comma-separated>\n"
-        "QR: <decoded QR content, or NONE>\n"
-        "SUBJECT: <brief description of the main person/subject>"
-    )
+    # -- Step 1: Structured OCR ---------------------------------------------
+    info = await _ocr_business_card(client, input_image)
 
-    analysis_response = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=[analysis_prompt, input_image],
-    )
+    # Build a text block from whatever fields were found
+    info_lines = []
+    if info.name:
+        info_lines.append(f"Name: {info.name}")
+    if info.title:
+        info_lines.append(f"Title: {info.title}")
+    if info.company:
+        info_lines.append(f"Company: {info.company}")
+    if info.contact:
+        info_lines.append(f"Contact: {info.contact}")
 
-    analysis = analysis_response.text.strip() if analysis_response.text else ""
-    log.info("business_card analysis: %s", analysis[:300])
-
-    # Determine whether we found meaningful contact info
-    has_text = "TEXT:" in analysis and "NONE" not in analysis.split("TEXT:", 1)[1].split("\n")[0].upper()
-    has_qr = "QR:" in analysis and "NONE" not in analysis.split("QR:", 1)[1].split("\n")[0].upper()
-    has_info = has_text or has_qr
-
-    # -- Step 2: Generate the business card image ---------------------------
-    card_rules = (
-        "Generate a business card graphic (the entire image is the card)."
-        "Place a circular headshot of the main subject from the reference photo "
-        "on the LEFT side. Use modern sans-serif typography. "
-        "Minimal, clean, professional design. Plain white background.\n\n"
-    )
-
-    if has_info:
-        gen_prompt = (
-            f"{card_rules}"
-            "On the RIGHT side, lay out the following extracted contact "
-            "information in a clean typographic hierarchy:\n\n"
-            f"{analysis}\n"
-        )
+    if info_lines:
+        info_block = "\n".join(info_lines)
     else:
-        gen_prompt = (
-            f"{card_rules}"
-            "On the RIGHT side, add subtle light-grey placeholder lines "
-            "where a name, title, email, and phone number would go. "
-            "Leave it ready for the owner to fill in later.\n"
-        )
+        info_block = "No contact info found — use placeholder lines."
+
+    log.info("business_card info block:\n%s", info_block)
+
+    # -- Step 2: Generate the card image ------------------------------------
+    blank_card = _make_blank_card()
+
+    gen_prompt = (
+        "The first image is a blank white business card. The second image is a photo.\n"
+        "Edit the blank card:\n"
+        "- Place a nice circular headshot of the main subject on the left. Make them look professional, looking at the camera head on.\n"
+        f"- On the right, typeset this info:\n{info_block}\n\n"
+        "ONLY include the info listed above. Do NOT invent or add any text, names, "
+        "or details not explicitly provided. Leave blank any area where info is missing.\n"
+        "Keep it minimal, clean, modern sans-serif. White background, no borders."
+    )
 
     response = client.models.generate_content(
         model="gemini-2.5-flash-image",
-        contents=[gen_prompt, input_image],
+        contents=[gen_prompt, blank_card, input_image],
         config=genai_types.GenerateContentConfig(
             response_modalities=["IMAGE"],
-            image_config=genai_types.ImageConfig(
-                aspect_ratio="16:9",
-            ),
         ),
     )
 
@@ -368,7 +395,6 @@ async def call_business_card(image_bytes: bytes, prompt: str) -> bytes:
             status_code=502, detail="Gemini returned no response for business card."
         )
 
-    # Extract image bytes, then force 3.5:2 landscape aspect ratio
     raw_bytes: bytes | None = None
     for part in response.parts:
         if part.inline_data is not None:
@@ -381,10 +407,9 @@ async def call_business_card(image_bytes: bytes, prompt: str) -> bytes:
             detail="Gemini did not return an image for the business card.",
         )
 
-    # Post-process: crop/resize to exact 3.5:2 landscape (width:height = 1.75)
+    # Post-process: ensure exact 3.5:2 landscape ratio
     card = Image.open(io.BytesIO(raw_bytes))
 
-    # If portrait, rotate to landscape
     if card.height > card.width:
         card = card.rotate(90, expand=True)
 
@@ -392,12 +417,10 @@ async def call_business_card(image_bytes: bytes, prompt: str) -> bytes:
     current_ratio = card.width / card.height
 
     if current_ratio > target_ratio:
-        # Too wide — crop sides
         new_width = int(card.height * target_ratio)
         left = (card.width - new_width) // 2
         card = card.crop((left, 0, left + new_width, card.height))
     elif current_ratio < target_ratio:
-        # Too tall — crop top/bottom
         new_height = int(card.width / target_ratio)
         top = (card.height - new_height) // 2
         card = card.crop((0, top, card.width, top + new_height))

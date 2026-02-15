@@ -28,7 +28,7 @@ from prompts import SEARCH_MODES
 load_dotenv()
 
 SERVER = os.environ.get("TEST_SERVER", "http://localhost:8000")
-IMAGE_PATH = "data/demo2.jpeg"
+IMAGE_PATH = "data/demo.jpg"
 OUTPUT_DIR = "data"
 
 # Comment out any modes you don't want to run
