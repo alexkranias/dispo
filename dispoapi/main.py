@@ -287,10 +287,9 @@ async def call_business_card(image_bytes: bytes, prompt: str) -> bytes:
     # -- Step 2: Generate the business card image ---------------------------
     card_rules = (
         "Create a business card "
-        "with a 3.5:2 width-to-height aspect ratio. "
         "Place a circular headshot of the main subject from the reference photo "
         "on the LEFT side. Use modern sans-serif typography. "
-        "Minimal, clean, professional design.\n\n"
+        "Minimal, clean, professional design Plain white background.\n\n"
     )
 
     if has_info:
