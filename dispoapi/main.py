@@ -17,7 +17,7 @@ from fastapi.responses import JSONResponse
 from google import genai
 from google.genai import types as genai_types
 from openai import OpenAI
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 
 from prompts import FILTER_MODES, MODE_PROMPTS, MODE_PROVIDERS, SEARCH_MODES, VALID_MODES
 
@@ -90,6 +90,50 @@ def downscale_image(image_bytes: bytes, max_dim: int = MAX_DIMENSION) -> bytes:
         img = img.convert("RGB")
     buf = io.BytesIO()
     img.save(buf, format="JPEG", quality=90)
+    return buf.getvalue()
+
+
+def render_price_image(title: str, price: str, width: int = 1280, height: int = 720) -> bytes:
+    """Render a clean white image with item name and price text using Pillow."""
+    img = Image.new("RGB", (width, height), "white")
+    draw = ImageDraw.Draw(img)
+
+    # Try to load a nice font, fall back to default
+    try:
+        font_price = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 280)
+        font_title = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 80)
+    except OSError:
+        try:
+            font_price = ImageFont.truetype("arial.ttf", 280)
+            font_title = ImageFont.truetype("arial.ttf", 80)
+        except OSError:
+            font_price = ImageFont.load_default(size=280)
+            font_title = ImageFont.load_default(size=80)
+
+    # Draw price centred
+    price_bbox = draw.textbbox((0, 0), price, font=font_price)
+    price_w = price_bbox[2] - price_bbox[0]
+    price_h = price_bbox[3] - price_bbox[1]
+    price_x = (width - price_w) // 2
+    price_y = (height - price_h) // 2
+
+    draw.text((price_x, price_y), price, fill="black", font=font_price)
+
+    # Draw item title centred above the price
+    if title and title != "N/A":
+        title_bbox = draw.textbbox((0, 0), title, font=font_title)
+        title_w = title_bbox[2] - title_bbox[0]
+        # Truncate if too wide
+        while title_w > width - 80 and len(title) > 10:
+            title = title[: len(title) - 4] + "…"
+            title_bbox = draw.textbbox((0, 0), title, font=font_title)
+            title_w = title_bbox[2] - title_bbox[0]
+        title_x = (width - title_w) // 2
+        title_y = price_y - 90
+        draw.text((title_x, title_y), title, fill="#555555", font=font_title)
+
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
     return buf.getvalue()
 
 
@@ -265,6 +309,7 @@ async def call_business_card(image_bytes: bytes, prompt: str) -> bytes:
         "addresses, company names, websites, social handles).\n"
         "2. If there is a QR code, decode its content.\n"
         "3. Briefly describe the main person or subject.\n\n"
+        "4. if text is not useful for business card don't include it!\n\n"
         "Return your findings in this exact format:\n"
         "TEXT: <all extracted text, comma-separated>\n"
         "QR: <decoded QR content, or NONE>\n"
@@ -286,10 +331,10 @@ async def call_business_card(image_bytes: bytes, prompt: str) -> bytes:
 
     # -- Step 2: Generate the business card image ---------------------------
     card_rules = (
-        "Create a business card "
+        "Generate a business card graphic (the entire image is the card)."
         "Place a circular headshot of the main subject from the reference photo "
         "on the LEFT side. Use modern sans-serif typography. "
-        "Minimal, clean, professional design Plain white background.\n\n"
+        "Minimal, clean, professional design. Plain white background.\n\n"
     )
 
     if has_info:
@@ -488,7 +533,6 @@ async def apply_filter(
     try:
         if mode in SEARCH_MODES:
             text = await call_perplexity(image_bytes, prompt)
-            result_b64 = encode_image_b64(image_bytes)  # echo original image back
 
             # Strip Perplexity citation references like [1], [3], etc.
             text = re.sub(r"\[\d+\]", "", text).strip()
@@ -501,6 +545,24 @@ async def apply_filter(
             else:
                 title = text.strip()
                 price = "N/A"
+
+            # If price wasn't detected, return early with no image
+            if price == "N/A" or title == "N/A":
+                return JSONResponse(
+                    content={
+                        "status": "not_found",
+                        "mode": mode,
+                        "provider": provider,
+                        "title": title,
+                        "price": price,
+                        "text": text,
+                        "image_b64": "",
+                    }
+                )
+
+            # Render a clean white image with the price text
+            price_img_bytes = render_price_image(title, price)
+            result_b64 = encode_image_b64(price_img_bytes)
         else:
             # Downscale before sending to diffusion models
             scaled_bytes = downscale_image(image_bytes)

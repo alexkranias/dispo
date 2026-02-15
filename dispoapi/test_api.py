@@ -28,7 +28,7 @@ from prompts import SEARCH_MODES
 load_dotenv()
 
 SERVER = os.environ.get("TEST_SERVER", "http://localhost:8000")
-IMAGE_PATH = "data/demo.jpg"
+IMAGE_PATH = "data/demo2.jpeg"
 OUTPUT_DIR = "data"
 
 # Comment out any modes you don't want to run
@@ -85,6 +85,15 @@ def test_mode(mode: str) -> None:
         with open(out_path, "w") as f:
             f.write(text)
         print(f"  Saved:    {out_path}")
+
+        # Also save the image if one was returned
+        img_b64 = data.get("image_b64", "")
+        if img_b64:
+            img_bytes = base64.b64decode(img_b64)
+            img_path = os.path.join(OUTPUT_DIR, f"{provider}_{mode}.png")
+            with open(img_path, "wb") as f:
+                f.write(img_bytes)
+            print(f"  Saved:    {img_path} ({len(img_bytes) / 1024:.0f} KB)")
     else:
         # Save image for filter modes
         img_bytes = base64.b64decode(data["image_b64"])

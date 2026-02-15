@@ -10,16 +10,16 @@ Modes fall into two categories:
 
 FILTER_PROMPTS: dict[str, str] = {
     "greek": "Make everyone waer ancient greek style robes. Make surrounding architecture look like ancient greece. Do not change the framing or composition of the image.",
-    "ghibli": "Imagine the scene in the style of Studio Ghibli.",
+    "ghibli": "Make this look like Studio Ghibli.",
     "duck": "Replace every human in the image with human-sized duck in the same pose.",
     "GPUMODE": "Replace every human in the image with a vertically oriented H100 GPU. It's like the 2001 space odyssey monolith.",
     "thinker": "Make the main subjects of the image pose in the style of the thinker. Do not change the scene, just change their pose.",
     "business_card": "Generate a professional business card from this image.",
-    "1846": "Reimagine the image as if it were the year 1846. Do NOT change the framing or composition of the image, and keep the main subjects the same. Replace elements that are not appropriate for the time period.",
-    "1929": "Reimagine the image as if it were the 1929. Do NOT change the framing or composition of the image, and keep the main subjects the same. Replace elements that are not appropriate for the time period.",
-    "1955": "Reimagine the image as if it were the 1955. Do NOT change the framing or composition of the image, and keep the main subjects the same. Replace elements that are not appropriate for the time period.",
-    "1984": "Reimagine the image as if it were the 1984. Do NOT change the framing or composition of the image, and keep the main subjects the same. Replace elements that are not appropriate for the time period.",
-    "1999": "Reimagine the image as if it were the 1999. Do NOT change the framing or composition of the image, and keep the main subjects the same. Replace elements that are not appropriate for the time period.",
+    "1846": "Reimagine the image as if it were the year 1846. Keep the camera angle the exact same. Keep the main subjects posed the exact same.",
+    "1929": "Reimagine the image as if it were the year 1929. Keep the camera angle the exact same. Keep the main subjects posed the exact same.",
+    "1955": "Reimagine the image as if it were the year 1955. Keep the camera angle the exact same. Keep the main subjects posed the exact same.",
+    "1984": "Reimagine the image as if it were the year 1984. Keep the camera angle the exact same. Keep the main subjects posed the exact same.",
+    "1999": "Reimagine the image as if it were the year 1999. Keep the camera angle the exact same. Keep the main subjects posed the exact same.",
 }
 
 # -- Search modes (Perplexity — image in, text out) -------------------------
