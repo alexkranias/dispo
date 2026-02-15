@@ -247,6 +247,22 @@ class ThermalCam:
             time.sleep(0.05)
         except Exception as e:
             print(f"Flash error: {e}")
+        """Flash the screen white briefly (camera shutter effect)"""
+        if not self.display:
+            return
+        
+        try:
+            # Fill white
+            with canvas(self.display) as draw:
+                draw.rectangle((0, 0, 128, 64), fill="white")
+            time.sleep(0.1)
+            
+            # Back to black
+            with canvas(self.display) as draw:
+                draw.rectangle((0, 0, 128, 64), fill="black")
+            time.sleep(0.05)
+        except Exception as e:
+            print(f"Flash error: {e}")
 
     def handle_dial(self):
         """Handle Rotary Encoder Movement"""
@@ -518,7 +534,7 @@ class ThermalCam:
                     # Save image after API call (after rotating back)
                     api_img.save("/tmp/after_api.jpg")
                     print("Saved after_api.jpg")
-                    
+                        
                 except Exception as e:
                     print(f"API Failed: {e}")
                     self.display_status("API ERROR")
