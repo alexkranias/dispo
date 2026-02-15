@@ -26,13 +26,13 @@ FILTER_PROMPTS: dict[str, str] = {
 
 SEARCH_PROMPTS: dict[str, str] = {
     "pricing": (
-        "Look at this image carefully. Identify every distinct product, item, or object visible. "
-        "For each item, search the web to find its current approximate retail price in USD. "
-        "Return a clean list with one line per item in this exact format:\n"
-        "ITEM NAME — $PRICE\n\n"
+        "Look at this image carefully. Identify the single main subject or product in the image. "
+        "Search the web to find its current approximate retail price in USD. "
         "Be specific about the item (brand, model, size if visible). "
-        "If you can't determine the exact product, estimate based on the closest match you can find. "
-        "Only list items that are clearly visible. Keep it concise."
+        "If you cannot confidently identify the main subject or find a price, respond with exactly:\n"
+        "N/A — N/A\n\n"
+        "Otherwise, respond with ONLY one line in this exact format (no extra text):\n"
+        "ITEM NAME — $PRICE"
     ),
 }
 

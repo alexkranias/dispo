@@ -359,6 +359,8 @@ async def apply_filter(
         )
 
     text = ""
+    title = ""
+    price = ""
 
     # Determine provider: search modes -> perplexity, filter modes -> MODE_PROVIDERS
     if mode in SEARCH_MODES:
@@ -372,6 +374,15 @@ async def apply_filter(
         if mode in SEARCH_MODES:
             text = await call_perplexity(image_bytes, prompt)
             result_b64 = encode_image_b64(image_bytes)  # echo original image back
+
+            # Parse "ITEM NAME — $PRICE" into structured title/price fields
+            if "—" in text:
+                parts = text.split("—", 1)
+                title = parts[0].strip()
+                price = parts[1].strip()
+            else:
+                title = text.strip()
+                price = "N/A"
         else:
             # Downscale before sending to diffusion models
             scaled_bytes = downscale_image(image_bytes)
@@ -388,6 +399,8 @@ async def apply_filter(
             "status": "ok",
             "mode": mode,
             "provider": provider,
+            "title": title,
+            "price": price,
             "text": text,
             "image_b64": result_b64,
         }
