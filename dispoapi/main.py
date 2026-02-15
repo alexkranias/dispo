@@ -437,19 +437,17 @@ async def call_sam(image_bytes: bytes, prompt: str) -> bytes:
     """
     Add Sam into the user's photo.
     Sends the user image + the sam.png reference to Gemini and asks it
-    to insert Sam naturally into the scene.
+    to insert Sam naturally into the scene.  Preserves the original aspect ratio.
     """
     client = _get_gemini_client()
 
     user_image = Image.open(io.BytesIO(image_bytes))
+    orig_width, orig_height = user_image.size
     sam_image = Image.open(_SAM_IMAGE_PATH)
 
     gen_prompt = (
         "I'm giving you two images.\n"
-        "Image 1 is the scene photo. Image 2 is a reference photo of a person named Sam.\n"
-        "Edit the scene photo to naturally add Sam into it. "
-        "Sam should look like he belongs in the scene — match the lighting, scale, and perspective. "
-        "Keep the rest of the scene unchanged."
+        "At the person from the one image naturally into the rest of the scene. Have him be involved in the scene."
     )
 
     response = client.models.generate_content(
@@ -460,13 +458,37 @@ async def call_sam(image_bytes: bytes, prompt: str) -> bytes:
     if not response.parts:
         raise HTTPException(status_code=502, detail="Gemini returned no response for sam mode.")
 
+    raw_bytes: bytes | None = None
     for part in response.parts:
         if part.inline_data is not None:
-            return part.inline_data.data
+            raw_bytes = part.inline_data.data
+            break
 
-    raise HTTPException(
-        status_code=502, detail="Gemini did not return an image for sam mode."
-    )
+    if raw_bytes is None:
+        raise HTTPException(
+            status_code=502, detail="Gemini did not return an image for sam mode."
+        )
+
+    # Post-process: force output to match original aspect ratio
+    result = Image.open(io.BytesIO(raw_bytes))
+    orig_ratio = orig_width / orig_height
+    result_ratio = result.width / result.height
+
+    if abs(result_ratio - orig_ratio) > 0.02:  # tolerance
+        if result_ratio > orig_ratio:
+            # Result is wider — crop sides
+            new_width = int(result.height * orig_ratio)
+            left = (result.width - new_width) // 2
+            result = result.crop((left, 0, left + new_width, result.height))
+        else:
+            # Result is taller — crop top/bottom
+            new_height = int(result.width / orig_ratio)
+            top = (result.height - new_height) // 2
+            result = result.crop((0, top, result.width, top + new_height))
+
+    buf = io.BytesIO()
+    result.save(buf, format="PNG")
+    return buf.getvalue()
 
 
 async def call_perplexity(image_bytes: bytes, prompt: str) -> str:
