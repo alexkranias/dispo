@@ -430,6 +430,45 @@ async def call_business_card(image_bytes: bytes, prompt: str) -> bytes:
     return buf.getvalue()
 
 
+_SAM_IMAGE_PATH = os.path.join(os.path.dirname(__file__), "data", "sam.png")
+
+
+async def call_sam(image_bytes: bytes, prompt: str) -> bytes:
+    """
+    Add Sam into the user's photo.
+    Sends the user image + the sam.png reference to Gemini and asks it
+    to insert Sam naturally into the scene.
+    """
+    client = _get_gemini_client()
+
+    user_image = Image.open(io.BytesIO(image_bytes))
+    sam_image = Image.open(_SAM_IMAGE_PATH)
+
+    gen_prompt = (
+        "I'm giving you two images.\n"
+        "Image 1 is the scene photo. Image 2 is a reference photo of a person named Sam.\n"
+        "Edit the scene photo to naturally add Sam into it. "
+        "Sam should look like he belongs in the scene — match the lighting, scale, and perspective. "
+        "Keep the rest of the scene unchanged."
+    )
+
+    response = client.models.generate_content(
+        model="gemini-2.5-flash-image",
+        contents=[gen_prompt, user_image, sam_image],
+    )
+
+    if not response.parts:
+        raise HTTPException(status_code=502, detail="Gemini returned no response for sam mode.")
+
+    for part in response.parts:
+        if part.inline_data is not None:
+            return part.inline_data.data
+
+    raise HTTPException(
+        status_code=502, detail="Gemini did not return an image for sam mode."
+    )
+
+
 async def call_perplexity(image_bytes: bytes, prompt: str) -> str:
     """
     Send image to Perplexity Sonar API for analysis (e.g. pricing mode).
@@ -495,6 +534,7 @@ PROVIDER_CALL = {
     "gemini": call_gemini,
     "modal": call_modal,
     "business_card": call_business_card,
+    "sam": call_sam,
 }
 
 

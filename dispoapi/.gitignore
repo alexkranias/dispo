@@ -31,3 +31,5 @@ test.jpeg
 
 # uv
 # uv.lock
+
+!/data/sam.png
