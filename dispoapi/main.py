@@ -658,23 +658,24 @@ async def apply_filter(
                 parts = text.split("—", 1)
                 title = parts[0].strip()
                 price = parts[1].strip()
+            elif "—" in text:
+                # Handle regular dash as fallback
+                parts = text.split("—", 1)
+                title = parts[0].strip()
+                price = parts[1].strip()
+            elif "-" in text:
+                parts = text.split("-", 1)
+                title = parts[0].strip()
+                price = parts[1].strip()
             else:
                 title = text.strip()
-                price = "N/A"
+                price = ""
 
-            # If price wasn't detected, return early with no image
-            if price == "N/A" or title == "N/A":
-                return JSONResponse(
-                    content={
-                        "status": "not_found",
-                        "mode": mode,
-                        "provider": provider,
-                        "title": title,
-                        "price": price,
-                        "text": text,
-                        "image_b64": "",
-                    }
-                )
+            # Ensure we always have a title and price
+            if not title:
+                title = "Unknown Item"
+            if not price:
+                price = "N/A"
 
             # Render a clean white image with the price text
             price_img_bytes = render_price_image(title, price)

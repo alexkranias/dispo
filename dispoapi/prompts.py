@@ -22,20 +22,21 @@ FILTER_PROMPTS: dict[str, str] = {
     "1999": "Reimagine the image as if it were the year 1999. Keep the camera angle the exact same. Keep the main subjects posed the exact same.",
     "tree": "Make every human become a full body cute redwood tree mascot in the same position (you can't see their face). They should be perfectly tree shaped with a triangular green top and a brown trunk. Keep the rest of the scene completely unchanged.",
     "sam": "Add Sam Altman from the reference photo naturally into the scene.",
-    "muscle": "Reimagine the main subjects of this image as insanely giant and muscular and shredded to a superhuman level. Their muscles are bulging out of their clothes. Keep them in the exact same pose and keep everything else about the scene completely unchanged.",
+    "muscle": "Reimagine the main subjects of this image as insanely muscular, huge, and shredded to a superhuman level. Show them with six pack insane muscles everything. Dress them however necessary. Keep them in the exact same pose and keep everything else about the scene completely unchanged.",
 }
 
 # -- Search modes (Perplexity — image in, text out) -------------------------
 
 SEARCH_PROMPTS: dict[str, str] = {
     "pricing": (
-        "Look at this image carefully. Identify the single main subject or product in the image. "
+        "Look at this image carefully. Identify the single most prominent object or product in the image. "
         "Search the web to find its current approximate retail price in USD. "
-        "Be specific about the item (brand, model, size if visible). "
-        "If you cannot confidently identify the main subject or find a price, respond with exactly:\n"
-        "N/A — N/A\n\n"
-        "Otherwise, respond with ONLY one line in this exact format (no extra text):\n"
-        "ITEM NAME — $PRICE"
+        "Be as specific as possible about the item (brand, model, size if visible). "
+        "If you cannot find an exact price, give your best reasonable estimate based on similar items.\n\n"
+        "You MUST always respond with ONLY one line in this exact format (no extra text):\n"
+        "ITEM NAME — $PRICE\n\n"
+        "Never respond with N/A. Always pick the most prominent object and always provide a dollar price, "
+        "even if it is an estimate."
     ),
 }
 
