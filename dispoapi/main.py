@@ -73,6 +73,25 @@ def decode_image_b64(data: str) -> bytes:
     return base64.b64decode(data)
 
 
+MAX_DIMENSION = 480
+
+
+def downscale_image(image_bytes: bytes, max_dim: int = MAX_DIMENSION) -> bytes:
+    """Downscale an image so its largest side is at most *max_dim* pixels.
+
+    Preserves aspect ratio. Returns JPEG bytes. If the image is already
+    within bounds it is re-encoded without resizing.
+    """
+    img = Image.open(io.BytesIO(image_bytes))
+    img.thumbnail((max_dim, max_dim), Image.Resampling.LANCZOS)
+    # Convert to RGB so we can always save as JPEG (handles RGBA, palette, etc.)
+    if img.mode not in ("RGB", "L"):
+        img = img.convert("RGB")
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=90)
+    return buf.getvalue()
+
+
 def get_prompt_for_mode(mode: str) -> str:
     """Look up the prompt for a given mode. Raises 400 if invalid."""
     if mode not in VALID_MODES:
@@ -124,33 +143,51 @@ async def call_openai(image_bytes: bytes, prompt: str) -> bytes:
 
 async def call_openai_image_edit(image_bytes: bytes, prompt: str) -> bytes:
     """
-    Send image + prompt to OpenAI via the Images Edit API (gpt-image-1.5).
+    Send image + prompt to OpenAI Images Edit API (gpt-image-1.5).
+    Uses the REST API directly since the SDK may not support the new
+    JSON-based edit endpoint yet.
     Returns transformed image bytes.
     """
-    client = _get_openai_client()
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=500, detail="OPENAI_API_KEY not set")
 
-    response = client.images.edits(
-        image=io.BytesIO(image_bytes),
-        prompt=prompt,
-        model="gpt-image-1.5",
-        n=1,
-        size="1024x1024",
-        quality="auto",
-        background="auto",
-        moderation="auto",
-        input_fidelity="high",
-    )
+    b64_input = encode_image_b64(image_bytes)
 
-    # The response contains a list of image objects with b64_json or url
-    if response.data and len(response.data) > 0:
-        img_data = response.data[0]
-        if img_data.b64_json:
-            return base64.b64decode(img_data.b64_json)
-        elif img_data.url:
-            # Download from URL if b64 not available
-            async with httpx.AsyncClient(timeout=60.0) as http:
-                resp = await http.get(img_data.url)
-                return resp.content
+    payload = {
+        "images": [
+            {"image_url": f"data:image/jpeg;base64,{b64_input}"}
+        ],
+        "prompt": prompt,
+        "model": "gpt-image-1.5",
+        "n": 1,
+        "size": "auto",
+        "quality": "auto",
+        "background": "auto",
+        "moderation": "auto",
+        "input_fidelity": "high",
+    }
+
+    async with httpx.AsyncClient(timeout=300.0) as http:
+        resp = await http.post(
+            "https://api.openai.com/v1/images/edits",
+            json=payload,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+        )
+
+    if resp.status_code != 200:
+        raise HTTPException(
+            status_code=502,
+            detail=f"OpenAI image edit returned {resp.status_code}: {resp.text[:300]}",
+        )
+
+    data = resp.json()
+    images = data.get("data", [])
+    if images and images[0].get("b64_json"):
+        return base64.b64decode(images[0]["b64_json"])
 
     raise HTTPException(
         status_code=502, detail="OpenAI image edit did not return an image."
@@ -312,9 +349,10 @@ async def apply_filter(
     prompt = get_prompt_for_mode(mode)
     image_bytes = await image.read()
 
-    # Validate upload
+    # Validate upload (verify() consumes the object, so use a fresh open)
     try:
-        Image.open(io.BytesIO(image_bytes)).verify()
+        img_check = Image.open(io.BytesIO(image_bytes))
+        img_check.verify()
     except Exception:
         raise HTTPException(
             status_code=400, detail="Uploaded file is not a valid image."
@@ -328,16 +366,21 @@ async def apply_filter(
     else:
         provider = MODE_PROVIDERS.get(mode, "gemini")
 
+    log.info("mode=%s provider=%s image_size=%d", mode, provider, len(image_bytes))
+
     try:
         if mode in SEARCH_MODES:
             text = await call_perplexity(image_bytes, prompt)
             result_b64 = encode_image_b64(image_bytes)  # echo original image back
         else:
-            result_bytes = await PROVIDER_CALL[provider](image_bytes, prompt)
+            # Downscale before sending to diffusion models
+            scaled_bytes = downscale_image(image_bytes)
+            result_bytes = await PROVIDER_CALL[provider](scaled_bytes, prompt)
             result_b64 = encode_image_b64(result_bytes)
     except HTTPException:
         raise
     except Exception as e:
+        log.exception("Provider %s failed for mode %s", provider, mode)
         raise HTTPException(status_code=502, detail=f"{provider} error: {e}")
 
     return JSONResponse(

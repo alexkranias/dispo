@@ -1,19 +1,18 @@
 """
-Test script — calls the /filter endpoint for every mode using test.jpeg.
-Saves each result to test_outputs/<provider>_<mode>.png.
+Test script — calls the /filter endpoint for every mode using demo.jpg.
+Saves each result to data/<mode>.png.
+
+Provider is now determined server-side per mode.
 
 Usage:
     # Start the server first:
     #   uv run uvicorn main:app --reload --port 8000
     #
-    # Then run this script (defaults to openai provider):
+    # Then run this script (all modes):
     #   uv run python test_api.py
     #
-    # Choose a provider:
-    #   uv run python test_api.py --provider gemini
-    #
     # Test specific modes:
-    #   uv run python test_api.py --provider openai ghibli duck 1984
+    #   uv run python test_api.py ghibli duck 1984
 """
 
 import base64
@@ -37,21 +36,21 @@ ALL_MODES = [
     "greek",
     "ghibli",
     "duck",
-    "gpu",
+    "GPUMODE",
     "thinker",
     "business_card",
     "pricing",
     "1846",
-    "1922",
+    "1929",
     "1955",
     "1984",
     "1999",
 ]
 
 
-def test_mode(mode: str, provider: str) -> None:
+def test_mode(mode: str) -> None:
     print(f"\n{'=' * 60}")
-    print(f"  Mode: {mode}  |  Provider: {provider}")
+    print(f"  Mode: {mode}")
     print(f"{'=' * 60}")
 
     with open(IMAGE_PATH, "rb") as f:
@@ -62,8 +61,8 @@ def test_mode(mode: str, provider: str) -> None:
     with httpx.Client(timeout=600.0) as client:
         resp = client.post(
             f"{SERVER}/filter",
-            data={"mode": mode, "provider": provider},
-            files={"image": ("test.jpeg", image_data, "image/jpeg")},
+            data={"mode": mode},
+            files={"image": ("demo.jpg", image_data, "image/jpeg")},
         )
 
     elapsed = time.time() - start
@@ -73,7 +72,9 @@ def test_mode(mode: str, provider: str) -> None:
         return
 
     data = resp.json()
+    provider = data.get("provider", "unknown")
     print(f"  Status:   {data['status']}")
+    print(f"  Provider: {provider}")
     print(f"  Time:     {elapsed:.1f}s")
 
     if mode in SEARCH_MODES:
@@ -100,13 +101,7 @@ def main():
 
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-    # Parse --provider flag
     args = sys.argv[1:]
-    provider = "openai"
-    if "--provider" in args:
-        idx = args.index("--provider")
-        provider = args[idx + 1]
-        args = args[:idx] + args[idx + 2 :]
 
     # Check server is up
     try:
@@ -119,11 +114,10 @@ def main():
 
     modes = args if args else ALL_MODES
 
-    print(f"  Provider: {provider}")
-    print(f"  Modes:    {', '.join(modes)}")
+    print(f"  Modes: {', '.join(modes)}")
 
     for mode in modes:
-        test_mode(mode, provider)
+        test_mode(mode)
 
     print(f"\n{'=' * 60}")
     print(f"  Done. Results in {OUTPUT_DIR}/")
