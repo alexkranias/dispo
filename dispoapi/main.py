@@ -286,12 +286,8 @@ async def call_business_card(image_bytes: bytes, prompt: str) -> bytes:
 
     # -- Step 2: Generate the business card image ---------------------------
     card_rules = (
-        "Create a FLAT 2D horizontal business card graphic. "
-        "This is NOT a photograph. Do NOT render a card on a table or desk. "
-        "Do NOT add perspective, shadows, or any 3D effect. "
-        "The ENTIRE image must be the card — nothing else. "
-        "Think of it like a design exported from Canva or Figma: a simple "
-        "rectangular graphic, wider than it is tall, with a white background. "
+        "Create a business card "
+        "with a 3.5:2 width-to-height aspect ratio. "
         "Place a circular headshot of the main subject from the reference photo "
         "on the LEFT side. Use modern sans-serif typography. "
         "Minimal, clean, professional design.\n\n"
@@ -315,6 +311,12 @@ async def call_business_card(image_bytes: bytes, prompt: str) -> bytes:
     response = client.models.generate_content(
         model="gemini-2.5-flash-image",
         contents=[gen_prompt, input_image],
+        config=genai_types.GenerateContentConfig(
+            response_modalities=["IMAGE"],
+            image_config=genai_types.ImageConfig(
+                aspect_ratio="16:9",
+            ),
+        ),
     )
 
     if not response.parts:
@@ -335,7 +337,7 @@ async def call_business_card(image_bytes: bytes, prompt: str) -> bytes:
             detail="Gemini did not return an image for the business card.",
         )
 
-    # Post-process: crop/resize to exact 3.5:2 (1.75:1) landscape
+    # Post-process: crop/resize to exact 3.5:2 landscape (width:height = 1.75)
     card = Image.open(io.BytesIO(raw_bytes))
 
     # If portrait, rotate to landscape
