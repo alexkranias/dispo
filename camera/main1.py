@@ -67,17 +67,18 @@ class ThermalCam:
         self.display_status("STARTING...")
         
         # Fetch modes from API
+        # "normal" is a client-side mode (no API call) available online & offline
         try:
             print("Fetching modes from API...")
             self.display_status("LOADING MODES...")
             resp = requests.get(f"{API_BASE_URL}/modes", timeout=5)
             resp.raise_for_status()
             data = resp.json()
-            self.modes = data["modes"]
+            self.modes = ["normal"] + data["modes"]
             print(f"Modes loaded: {self.modes}")
         except Exception as e:
-            print(f"API unavailable ({e}), falling back to Standard mode")
-            self.modes = ["Standard"]
+            print(f"API unavailable ({e}), falling back to normal mode")
+            self.modes = ["normal"]
         
         # Setup Printer
         try:
@@ -515,8 +516,8 @@ class ThermalCam:
             final_img = raw_img
             api_text = ""
 
-            # Skip API call for Standard mode
-            if current_mode != "Standard":
+            # Skip API call for local-only modes
+            if current_mode != "normal":
                 try:
                     # Rotate 180 degrees before sending to API
                     raw_img_rotated = raw_img.rotate(180, expand=True)

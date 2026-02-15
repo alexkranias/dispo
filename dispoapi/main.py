@@ -436,38 +436,69 @@ _SAM_IMAGE_PATH = os.path.join(os.path.dirname(__file__), "data", "sam.png")
 async def call_sam(image_bytes: bytes, prompt: str) -> bytes:
     """
     Add Sam into the user's photo.
-    Sends the user image + the sam.png reference to Gemini and asks it
+    Sends the user image + the sam.png reference to OpenAI gpt-image-1.5 and asks it
     to insert Sam naturally into the scene.  Preserves the original aspect ratio.
     """
-    client = _get_gemini_client()
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=500, detail="OPENAI_API_KEY not set")
 
     user_image = Image.open(io.BytesIO(image_bytes))
     orig_width, orig_height = user_image.size
-    sam_image = Image.open(_SAM_IMAGE_PATH)
+
+    # Encode both images as base64
+    buf_user = io.BytesIO()
+    user_image.save(buf_user, format="JPEG", quality=95)
+    b64_user = encode_image_b64(buf_user.getvalue())
+
+    with open(_SAM_IMAGE_PATH, "rb") as f:
+        b64_sam = encode_image_b64(f.read())
 
     gen_prompt = (
-        "I'm giving you two images.\n"
-        "At the person from the one image naturally into the rest of the scene. Have him be involved in the scene."
+        "I'm giving you two images. "
+        "Add the person from the second reference image naturally into the scene of the first image. "
+        "Have him be involved in the scene."
     )
 
-    response = client.models.generate_content(
-        model="gemini-2.5-flash-image",
-        contents=[gen_prompt, user_image, sam_image],
-    )
+    payload = {
+        "images": [
+            {"image_url": f"data:image/jpeg;base64,{b64_user}"},
+            {"image_url": f"data:image/png;base64,{b64_sam}"},
+        ],
+        "prompt": gen_prompt,
+        "model": "gpt-image-1.5",
+        "n": 1,
+        "size": "auto",
+        "quality": "auto",
+        "background": "auto",
+        "moderation": "auto",
+        "input_fidelity": "high",
+    }
 
-    if not response.parts:
-        raise HTTPException(status_code=502, detail="Gemini returned no response for sam mode.")
-
-    raw_bytes: bytes | None = None
-    for part in response.parts:
-        if part.inline_data is not None:
-            raw_bytes = part.inline_data.data
-            break
-
-    if raw_bytes is None:
-        raise HTTPException(
-            status_code=502, detail="Gemini did not return an image for sam mode."
+    async with httpx.AsyncClient(timeout=300.0) as http:
+        resp = await http.post(
+            "https://api.openai.com/v1/images/edits",
+            json=payload,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
         )
+
+    if resp.status_code != 200:
+        raise HTTPException(
+            status_code=502,
+            detail=f"OpenAI image edit returned {resp.status_code}: {resp.text[:300]}",
+        )
+
+    data = resp.json()
+    images = data.get("data", [])
+    if not images or not images[0].get("b64_json"):
+        raise HTTPException(
+            status_code=502, detail="OpenAI image edit did not return an image for sam mode."
+        )
+
+    raw_bytes = base64.b64decode(images[0]["b64_json"])
 
     # Post-process: force output to match original aspect ratio
     result = Image.open(io.BytesIO(raw_bytes))

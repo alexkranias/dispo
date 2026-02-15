@@ -22,6 +22,7 @@ FILTER_PROMPTS: dict[str, str] = {
     "1999": "Reimagine the image as if it were the year 1999. Keep the camera angle the exact same. Keep the main subjects posed the exact same.",
     "tree": "Make every human become a full body cute redwood tree mascot in the same position (you can't see their face). They should be perfectly tree shaped with a triangular green top and a brown trunk. Keep the rest of the scene completely unchanged.",
     "sam": "Add Sam Altman from the reference photo naturally into the scene.",
+    "muscle": "Reimagine the main subjects of this image as insanely giant and muscular and shredded to a superhuman level. Their muscles are bulging out of their clothes. Keep them in the exact same pose and keep everything else about the scene completely unchanged.",
 }
 
 # -- Search modes (Perplexity — image in, text out) -------------------------
@@ -39,7 +40,7 @@ SEARCH_PROMPTS: dict[str, str] = {
 }
 
 # -- Provider routing per mode -----------------------------------------------
-# Every filter mode is "gemini" except "ghibli" which uses OpenAI gpt-image-1.5.
+# Every filter mode is "gemini" except "ghibli" and "sam" which use OpenAI gpt-image-1.5.
 # Search modes are routed to "perplexity" in the endpoint logic.
 
 MODE_PROVIDERS: dict[str, str] = {
@@ -56,6 +57,7 @@ MODE_PROVIDERS: dict[str, str] = {
     "1999": "gemini",
     "tree": "gemini",
     "sam": "sam",
+    "muscle": "gemini",
 }
 
 # -- Combined lookups -------------------------------------------------------
