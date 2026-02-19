@@ -23,6 +23,7 @@ FILTER_PROMPTS: dict[str, str] = {
     "tree": "Make every human become a full body cute redwood tree mascot in the same position (you can't see their face). They should be perfectly tree shaped with a triangular green top and a brown trunk. Keep the rest of the scene completely unchanged.",
     "sam": "Add Sam Altman from the reference photo naturally into the scene.",
     "muscle": "Reimagine the main subjects of this image as insanely muscular, huge, and shredded to a superhuman level. Show them with six pack insane muscles everything. Dress them however necessary. Keep them in the exact same pose and keep everything else about the scene completely unchanged.",
+    "valentines": "Identify the main subject of this image. Add an attractive romantic partner next to them or interacting with them in a natural, romantic way. The romantic partner should be attractive and complement the subject. Do NOT change the pose or appearance of the original subject at all. Keep the original subject exactly as they are.",
 }
 
 # -- Search modes (Perplexity — image in, text out) -------------------------
@@ -59,6 +60,7 @@ MODE_PROVIDERS: dict[str, str] = {
     "tree": "gemini",
     "sam": "sam",
     "muscle": "gemini",
+    "valentines": "gemini",
 }
 
 # -- Combined lookups -------------------------------------------------------
