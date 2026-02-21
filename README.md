@@ -2,7 +2,7 @@
 
 A diffusion-powered instant camera that turns half-real, half-dreamed moments into physical prints.
 
-Built at **TreeHacks 2025**.
+Built at **TreeHacks 2026**.
 
 ## Inspiration
 
